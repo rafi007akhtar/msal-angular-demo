@@ -15,7 +15,7 @@ import { MatCardModule } from '@angular/material/card';
 import { HomeComponent } from './home/home.component';
 import { ProfileComponent } from './profile/profile.component';
 
-import { MSAL_INSTANCE } from '@azure/msal-angular';
+import { MsalBroadcastService, MsalRedirectComponent, MSAL_INSTANCE } from '@azure/msal-angular';
 import { PublicClientApplication } from '@azure/msal-browser';
 import { IPublicClientApplication } from '@azure/msal-browser';
 import { MsalService } from '@azure/msal-angular';
@@ -52,8 +52,9 @@ function MSALInstanceFactory(): IPublicClientApplication {
             provide: MSAL_INSTANCE,
             useFactory: MSALInstanceFactory
         },
-        MsalService
+        MsalService,
+        MsalBroadcastService
     ],
-    bootstrap: [AppComponent]
+    bootstrap: [AppComponent, MsalRedirectComponent]
 })
 export class AppModule { }
