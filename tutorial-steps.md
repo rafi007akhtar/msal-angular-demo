@@ -56,7 +56,7 @@ Finally, you can click on API permissions and see the permission strings under M
 
 ---
 
-## Setting up Microsoft SSO with the Angular App
+## Setting up Microsoft Azure with the Angular App
 
 Open the app.module.ts file, and write the following factory method in it. It will be used to instantiate an MSAL instance.
 Replace with the strings mentioned in the App Registrations page.
