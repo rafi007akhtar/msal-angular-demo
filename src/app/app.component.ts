@@ -1,19 +1,23 @@
-import { Component, OnInit } from '@angular/core';
-import { filter } from 'rxjs/operators';
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { filter, takeUntil } from 'rxjs/operators';
 
 import { MsalService, MsalBroadcastService } from '@azure/msal-angular';
-import { InteractionStatus, PopupRequest, RedirectRequest } from '@azure/msal-browser';
+import { AuthenticationResult, EventMessage, EventType, InteractionStatus, PopupRequest, RedirectRequest } from '@azure/msal-browser';
+import { Subject } from 'rxjs';
 
 @Component({
     selector: 'app-root',
     templateUrl: './app.component.html',
     styleUrls: ['./app.component.css']
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, OnDestroy {
     title = 'msal-angular demo';
     activeUser: string | undefined = "unknown user";
     isAuthenticated = false;
     authDisplayType: 'popup' | 'redirect' | undefined = 'popup';
+
+    // we need to unsubscribe to observables once the application closes, for performance reasons
+    private unsubscribe = new Subject<void>();
 
     constructor(
         private msalService: MsalService,
@@ -24,13 +28,32 @@ export class AppComponent implements OnInit {
         // We need to set the authentication status if no interactiion with the MSAL server is happening
         this.msalBroadcastService.inProgress$
             .pipe(
-                filter((status: InteractionStatus) => status === InteractionStatus.None)
+                filter((status: InteractionStatus) => status === InteractionStatus.None),
+                takeUntil(this.unsubscribe)
             )
             .subscribe({
                 next: () => {
                     this.setAuthenticationStatus();
                 }
             });
+
+        // use the LOGIN_SUCCESS event from the broadcast subject to handle the login
+        this.msalBroadcastService.msalSubject$
+            .pipe(
+                filter((message: EventMessage) => message.eventType === EventType.LOGIN_SUCCESS),
+                takeUntil(this.unsubscribe)
+            )
+            .subscribe({
+                next: (message: EventMessage) => {
+                    const authResult = message.payload as AuthenticationResult;
+                    this.msalService.instance.setActiveAccount(authResult.account);
+                }
+            });
+    }
+
+    ngOnDestroy(): void {
+        this.unsubscribe.next(undefined);
+        this.unsubscribe.complete();
     }
 
     login(): void {
