@@ -15,7 +15,7 @@ export class AppComponent implements OnInit, OnDestroy {
     title = 'msal-angular demo';
     activeUser: string | undefined = "unknown user";
     isAuthenticated = false;
-    authDisplayType: 'popup' | 'redirect' | undefined = 'redirect';
+    authDisplayType: 'popup' | 'redirect' | undefined = 'popup';
 
     // we need to unsubscribe to observables once the application closes, for performance reasons
     private unsubscribe = new Subject<void>();
