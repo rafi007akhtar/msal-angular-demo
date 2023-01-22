@@ -1,5 +1,7 @@
+import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
+import { AppConstants } from './constants';
 
 import { Profile } from './profile';
 
@@ -8,19 +10,11 @@ import { Profile } from './profile';
 })
 export class ProfileService {
 
-    constructor() { }
+    constructor(
+        private httpClient: HttpClient
+    ) { }
 
     getProfile(): Observable<Profile> {
-        return new Observable<Profile>(observer => {
-            observer.next({
-                displayName: "John Doe",
-                givenName: "John",
-                id: "1",
-                jobTitle: "Software Engineer",
-                mail: "jdoe@azure.net",
-                surname: "Doe",
-                userPrincipalName: "jdoe@azure.net"
-            });
-        })
+        return this.httpClient.get<Profile>(AppConstants.graphEndpoint);
     }
 }
