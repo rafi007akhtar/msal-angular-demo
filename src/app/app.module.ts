@@ -27,7 +27,9 @@ function MsalInstanceFactory(): IPublicClientApplication {
         auth: {
             clientId: '2387afb1-e6a7-4cc9-b7be-19f36ee29ec8',  // application id that is registered on azure portal
             authority: 'https://login.microsoftonline.com/fded63df-9c7a-401b-8848-b320dfddc933',  // tack on the tenant id at the end of the URI
-            redirectUri: '/auth'  // The redirect URI where authentication responses can be received by your application.
+            redirectUri: '/auth',  // The redirect URI where authentication responses can be received by your application.,
+            postLogoutRedirectUri: '/',
+            clientCapabilities: ['CP1'],  // lets the resource know that the client is capable of handling claim challenge (like change in passwprd, etc)
         },
         cache: {
             cacheLocation: "sessionStorage",  // default; the other option is localStorage
@@ -61,9 +63,18 @@ function MsalInterceptorConfigFactory(): MsalInterceptorConfiguration {
         httpMethod: 'GET',
         scopes: ['User.Read']
     }]);
+
+    const claimsChallenge = sessionStorage.getItem('claimsChallenge');  // for reauthentication
     return {
         interactionType: InteractionType.Popup,
-        protectedResourceMap: myProtectedResourceMap
+        protectedResourceMap: myProtectedResourceMap,
+        // for reauthentication:
+        authRequest: (msalService, req, originalAuthRequest) => {
+            return {
+                ...originalAuthRequest,
+                claims: claimsChallenge ? window.atob(claimsChallenge) : undefined
+            }
+        }
     }
 }
 

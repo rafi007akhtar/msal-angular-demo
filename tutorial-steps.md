@@ -172,6 +172,23 @@ And correspondingly, this method is bound to the loogout HTML button.
 ```
 Now clicking on the Logout button should log you out of the session.
 
+Additionally, I have set this up such that when you are on a different route (say Profiles) and you logout via popup, you should be redirected to the home page. This is done by creating a `postLogout` method as follows.
+```ts
+postLogout() {
+    this.isAuthenticated = false;
+    this.activeUser = undefined;
+    this.router.navigate(['/']);
+}
+```
+and chaining it with the `logoutPopup` method like so:
+```ts
+case 'popup':
+    this.msalService.instance.logoutPopup().then(() => this.postLogout());
+    break;
+```
+
+Now when you logout from a different page, it should take you back to home page.
+
 ---
 
 ## Setting the Active User
@@ -592,3 +609,86 @@ getProfile(): Observable<Profile> {
 Now on logging in and accessing the Profile route, it should obtain info from the Azure directory.
 
 ---
+
+## Reauthentication of Access Token
+
+This will be needed when the user has changed password, or the user is removed, or some event has occured that resulted in an auth challege, and reauthentication is needed.
+
+At first, declare to MSAL that the application is capable of supporting reauthentication. This can be done by adding the following inside the `auth` property inside app module.
+```ts
+clientCapabilities: ['CP1'], 
+```
+
+Next, go to the profile component ts file to catch the auth challenge. This is done by adding an `error` block to the `getProfile` subscription.
+```ts
+getProfile(): void {
+    this.profileService.getProfile()
+        .subscribe({
+            next: (profile: Profile) => {
+                this.profile = profile;
+            },
+            // new code from here
+            error:(err) => {
+                if (err.status === 401) {
+                    if (err.headers.get('www-authenticate')) {
+                        this.profileService.handleClaimsChallenge(err);
+                    }
+                }
+            }
+        });
+}
+```
+The error is getting caught when the status is 401. We can tell if the error is an auth challenge by checking for the presence of "www-authenticate" inside the error headers.
+
+If a challenge is caught, the handler method is called, which is defined in the profile service file
+
+The handler method will get the info from the header, then extract the exact claim challenge using a process of splitting and finding and splitting, and store the challange in the session. It will then call the `acquireTokenRedirect` method to get a fresh new token for the user.
+
+Accordingly, the following handler method is written.
+```ts
+handleClaimsChallenge(res: any) {
+    const authenticateHeader: string = res.headers.get('www-authenticate');
+
+    // I don't really understand the logic behind this
+    const claimsChallenge: any = authenticateHeader
+        ?.split(' ')
+        ?.find(elem => elem.includes('claims='))
+        ?.split('claims="')[1]
+        ?.split('",')[0];
+
+    // this is optional, and needed if you will do something with this data
+    sessionStorage.setItem('claimsChallenge', claimsChallenge);
+    
+
+    // reauthenticate the user, and give them a fresh new token
+    this.msalService.instance.acquireTokenRedirect({
+        account: this.msalService.instance.getActiveAccount() as AccountInfo,
+        scopes: ['User.Read'],
+        claims: window.atob(claimsChallenge)
+    });
+}
+```
+
+Back the app module file, the interceptor function is modified as follows: return the config object with a new key-value pair. The key is `authRequest` and its value is a callback function that would combine the original auth request with the claim challege that will be obtained from the session.
+```ts
+const claimsChallenge = sessionStorage.getItem('claimsChallenge');  // for reauthentication
+return {
+    interactionType: InteractionType.Popup,
+    protectedResourceMap: myProtectedResourceMap,
+    // for reauthentication:
+    authRequest: (msalService, req, originalAuthRequest) => {
+        return {
+            ...originalAuthRequest,
+            claims: claimsChallenge ? window.atob(claimsChallenge) : undefined
+        }
+    }
+}
+```
+
+Theortically, this should handle reauthentication. I haven't tried it myself.
+
+That's all from the tutorial!
+
+---
+
+

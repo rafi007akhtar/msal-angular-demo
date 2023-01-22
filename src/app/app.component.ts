@@ -4,6 +4,7 @@ import { filter, takeUntil } from 'rxjs/operators';
 import { MsalService, MsalBroadcastService } from '@azure/msal-angular';
 import { AuthenticationResult, EventMessage, EventType, InteractionStatus, PopupRequest, RedirectRequest } from '@azure/msal-browser';
 import { Subject } from 'rxjs';
+import { Router } from '@angular/router';
 
 @Component({
     selector: 'app-root',
@@ -14,14 +15,15 @@ export class AppComponent implements OnInit, OnDestroy {
     title = 'msal-angular demo';
     activeUser: string | undefined = "unknown user";
     isAuthenticated = false;
-    authDisplayType: 'popup' | 'redirect' | undefined = 'popup';
+    authDisplayType: 'popup' | 'redirect' | undefined = 'redirect';
 
     // we need to unsubscribe to observables once the application closes, for performance reasons
     private unsubscribe = new Subject<void>();
 
     constructor(
         private msalService: MsalService,
-        private msalBroadcastService: MsalBroadcastService
+        private msalBroadcastService: MsalBroadcastService,
+        private router: Router,
     ) {}
 
     ngOnInit(): void {
@@ -73,7 +75,7 @@ export class AppComponent implements OnInit, OnDestroy {
     logout(): void {
         switch (this.authDisplayType) {
             case 'popup':
-                this.msalService.instance.logoutPopup();
+                this.msalService.instance.logoutPopup().then(() => this.postLogout());
                 break;
             case 'redirect':
                 this.msalService.instance.logoutRedirect();
@@ -81,6 +83,12 @@ export class AppComponent implements OnInit, OnDestroy {
             default:
                 this.msalService.instance.logout();
         }
+    }
+
+    postLogout() {
+        this.isAuthenticated = false;
+        this.activeUser = undefined;
+        this.router.navigate(['/']);
     }
 
     setAuthenticationStatus() {
