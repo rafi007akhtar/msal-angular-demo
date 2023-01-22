@@ -252,8 +252,200 @@ Code:
 <button mat-raised-button (click)="login()" *ngIf="!isAuthenticated">Login</button>
 <button mat-raised-button color="accent" (click)="logout()" *ngIf="isAuthenticated">Logout</button>
 ```
+
+### Using Event Type to Handle Login Success
+All the event types and their descriptions can be found in [this](./slide_screenshots/Screenshot%202023-01-21%20133602.png) file. The type we are interested in is the `LOGIN_SUCESS`.
+
+To handle it, we will use the broadcast service.
+
+Start by subscribing to its subject, filtering only the success responses.
+When the message is received, parse its payload to `AuthenticationResult` and set its `account` as the active account.
+```ts
+this.msalBroadcastService.msalSubject$
+    .pipe(
+        filter((message: EventMessage) => message.eventType === EventType.LOGIN_SUCCESS)
+    )
+    .subscribe({
+        next: (message: EventMessage) => {
+            const authResult = message.payload as AuthenticationResult;
+            this.msalService.instance.setActiveAccount(authResult.account);
+        }
+    });
+```
+
+At this point of time, the application is subscribing to multiple observables. So for performance reasons, it is necessary to unsubscribe to them once the application closes.
+
+For this, start by creating an `unsubscribe` Subject.
+```ts
+private unsubscribe = new Subject<void>();
+```
+Use this variable to complete in the OnDestroy lifecycle.
+```ts
+export class AppComponent implements OnInit, OnDestroy {
+    // ...
+
+    ngOnDestroy(): void {
+        this.unsubscribe.next(undefined);
+        this.unsubscribe.complete();
+    }
+
+    // ...
+```
+
+And finally, use `takeUntil` in all the observable pipes and pass this variable to it.
+```ts
+this.msalBroadcastService.inProgress$
+.pipe(
+    filter((status: InteractionStatus) => status === InteractionStatus.None)
+    filter((status: InteractionStatus) => status === InteractionStatus.None),
+    takeUntil(this.unsubscribe)  // this line
+)
+
+// ...
+
+this.msalBroadcastService.msalSubject$
+.pipe(
+    filter((message: EventMessage) => message.eventType === EventType.LOGIN_SUCCESS),
+    takeUntil(this.unsubscribe)  // this line
+)
+```
+
+That's all for this section!
+
 ---
 
 
 
+## Decoding the secret key
+
+Do **NOT** do this for any data other than test, but the way to get the decoded token is:
+- login to the application via Microsoft SSO
+- open dev tools, then go to Application tab
+- look for the session data with a "secret" key
+- copy the value of this key
+- Go to https://jwt.ms/ and paste this data over there (again, don't do this for production data)
+
+That's it. The claims in keys and their values will be shown in the "Decoded token" list. These are what they mean.
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th class="col-sm-1">Claim type</th>
+            <th class="col-sm-8">Notes</th>
+        </tr>
+    </thead>
+    <tbody id="claimsTabTBody">
+        <tr>
+            <td><span class="mono prewrapbreakword">aud</span></td>
+            <td>Identifies the intended recipient of the token. In id_tokens, the audience is your app's Application ID,
+                assigned to your app in the Azure portal. Your app should validate this value, and reject the token if
+                the value does not match. (Same as client id.)</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">iss</span></td>
+            <td>Identifies the security token service (STS) that constructs and returns the token, and the Azure AD
+                tenant in which the user was authenticated. If the token was issued by the v2.0 endpoint, the URI will
+                end in /v2.0. The GUID that indicates that the user is a consumer user from a Microsoft account is
+                9188040d-6c67-4c5b-b112-36a304b66dad. Your app should use the GUID portion of the claim to restrict the
+                set of tenants that can sign in to the app, if applicable. (Same as authority, which will have the tenant id.)</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">iat</span></td>
+            <td>"Issued At" indicates when the authentication for this token occurred.</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">nbf</span></td>
+            <td>The "nbf" (not before) claim identifies the time before which the JWT MUST NOT be accepted for
+                processing.</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">exp</span></td>
+            <td>The "exp" (expiration time) claim identifies the expiration time on or after which the JWT MUST NOT be
+                accepted for processing. It's important to note that a resource may reject the token before this time as
+                well - if for example a change in authentication is required or a token revocation has been detected.
+            </td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">groups</span></td>
+            <td>If the user belongs to some security groups, they will appear here (array).
+            </td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">wids</span></td>
+            <td>Azure id roles assiged to the user, if any (array).</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">roles</span></td>
+            <td>The user would have these roles (array)</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">idp</span></td>
+            <td>Records the identity provider that authenticated the subject of the token. This value is identical to
+                the value of the Issuer claim unless the user account not in the same tenant as the issuer - guests, for
+                instance. If the claim is not present, it means that the value of iss can be used instead. For personal
+                accounts being used in an orgnizational context (for instance, a personal account invited to an Azure AD
+                tenant), the idp claim may be 'live.com' or an STS URI containing the Microsoft account tenant
+                9188040d-6c67-4c5b-b112-36a304b66dad.</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">name</span></td>
+            <td>The name claim provides a human-readable value that identifies the subject of the token. The value is
+                not guaranteed to be unique, it is mutable, and it's designed to be used only for display purposes. The
+                profile scope is required in order to receive this claim.</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">nonce</span></td>
+            <td>The nonce matches the parameter included in the original /authorize request to the IDP. If it does not
+                match, your application should reject the token.</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">oid</span></td>
+            <td>The immutable identifier for an object in the Microsoft identity system, in this case, a user account.
+                This ID uniquely identifies the user across applications - two different applications signing in the
+                same user will receive the same value in the oid claim. The Microsoft Graph will return this ID as the
+                id property for a given user account. Because the oid allows multiple apps to correlate users, the
+                profile scope is required in order to receive this claim. Note that if a single user exists in multiple
+                tenants, the user will contain a different object ID in each tenant - they are considered different
+                accounts, even though the user logs into each account with the same credentials.</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">preferred_username</span></td>
+            <td>The primary username that represents the user. It could be an email address, phone number, or a generic
+                username without a specified format. Its value is mutable and might change over time. Since it is
+                mutable, this value must not be used to make authorization decisions. The profile scope is required in
+                order to receive this claim.</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">rh</span></td>
+            <td>An internal claim used by Azure to revalidate tokens. Should be ignored.</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">sub</span></td>
+            <td>The principal about which the token asserts information, such as the user of an app. This value is
+                immutable and cannot be reassigned or reused. The subject is a pairwise identifier - it is unique to a
+                particular application ID. Therefore, if a single user signs into two different apps using two different
+                client IDs, those apps will receive two different values for the subject claim. This may or may not be
+                desired depending on your architecture and privacy requirements.</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">tid</span></td>
+            <td>A GUID that represents the Azure AD tenant that the user is from. For work and school accounts, the GUID
+                is the immutable tenant ID of the organization that the user belongs to. For personal accounts, the
+                value is 9188040d-6c67-4c5b-b112-36a304b66dad. The profile scope is required in order to receive this
+                claim.</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">uti</span></td>
+            <td>An internal claim used by Azure to revalidate tokens. Should be ignored.</td>
+        </tr>
+        <tr>
+            <td><span class="mono prewrapbreakword">ver</span></td>
+            <td>Indicates the version of the token.</td>
+        </tr>
+    </tbody>
+</table>
+
+Note:
+- you can use these info to customize the UI in any way,
+- only use the access token to access any web api; don't use any id token for it.
 
