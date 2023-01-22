@@ -310,11 +310,8 @@ this.msalBroadcastService.msalSubject$
 )
 ```
 
-That's all for this section!
 
 ---
-
-
 
 ## Decoding the secret key
 
@@ -449,3 +446,149 @@ Note:
 - you can use these info to customize the UI in any way,
 - only use the access token to access any web api; don't use any id token for it.
 
+---
+
+## Caching Options
+The cache can be stored in session storage or local storage. Local would provide the best user experience but session would be more secure. The default is session.
+
+Furthermore, the cookies can be enforeced to be sent only via HTTPS. So I have enabled this setting for production mode.
+
+These settings can be enabled using the `cache` object inside the MSAL instance factory function. Just below the `auth`, I have added the following code to enable this.
+
+```ts
+cache: {
+    cacheLocation: "sessionStorage",  // default; the other option is localStorage
+    secureCookies: environment.production  // true will enforce the cookies to be sent over only via HTTPS; by default, it is false
+},
+```
+
+---
+
+## Logging Options
+The logging will happen in the browser console, and will be useful for debugging. It can be enabled by adding a `system` object inside the MSAL instance factory function, and inside that a `loggerOptions` object. This object is taking two properties in the code:
+- A `loggerCallBack` method, which will contain the log message. I have configured it such that it would only log the message when there is no PII.
+- A `logLevel`, to specify the log level, which I have to verbose.
+
+Accordingly, just below the `cache`, the following object is added.
+```ts
+system: {
+    loggerOptions: {
+        loggerCallback: (level, message, constainsPii) => {
+            if (! constainsPii) {
+                console.log(message);
+            }
+        },
+        logLevel: LogLevel.Verbose
+    }
+}
+```
+
+---
+
+## Setting Auth Guards
+We do not want any unauthorized user to access any routes that should be available post-login only. To enable this, MSAL provides its own authguards.
+
+We start by adding this authguard to the routes we want to guard, in the app-routing.module.ts file.
+
+```ts
+{
+    path: 'profile',
+    component: ProfileComponent,
+    canActivate: [MsalGuard]  // this line
+},
+```
+**Note**: do NOT put the authguard in the "/auth" route, or it will break the application.
+
+Next, go to the the app module file, and insert it inside the `providers` array. Additionally, this authguard needs to be configured with the following behaviour:
+- when a protected route is accessed without login in, it should redirect to the Microsoft SSO login
+- user should login with their creds
+- post successful login, the user should be able to view the protected route.
+
+To implement this, the authguard needs to be configured as such, so put the providers as follows:
+```ts
+providers: [
+    // ...
+    {
+        provide: MSAL_GUARD_CONFIG,
+        useFactory: MsalGuardConfigFactory
+    },
+    // ...
+    MsalGuard
+]
+```
+where `MsalGuardConfigFactory` is the factory function that will implement the above behaviour. <br>
+This function defined the interaction type of the login (popup / redirect), and provides the permissions for auth request. So the following code has been written accordingly inside the app module file.
+```ts
+function MsalGuardConfigFactory(): MsalGuardConfiguration {
+    return {
+        interactionType: InteractionType.Redirect,
+        authRequest: {
+            scopes: ["User.Read"]
+        }
+    }
+}
+```
+Note: I have refrained from using popup here, because I noticed that browsers will try to block popups. So it is better to use redirect here.
+
+---
+
+## Using Microsoft Graph to Obtain Profile Info
+This will require the use of interceptors. (Full disclosure: this section is not entirely clear to me.)
+
+Start by adding MSAL interceptor in the `providers` array, which would configure `HTTP_INTERCEPTORS` with a `useClass`. Set `multi` to true.
+
+Then, we need to configure the above configuration with a factory function, so add another object in the `providers` array containing the name of this function.
+
+Code:
+```ts
+providers: [
+   // ...
+    {
+        provide: HTTP_INTERCEPTORS,
+        useClass: MsalInterceptor,
+        multi: true
+    },
+    {
+        provide: MSAL_INTERCEPTOR_CONFIG,
+        useFactory: MsalInterceptorConfigFactory
+    },
+    // ...
+]
+```
+
+Define this function in the following way:
+- define a protected resource variable, which will set the Microsoft Graph URL, and the scopes,
+- return an object containing the interaction type (this time popup), and the above protected resource.
+Accordingly, the following function is implemented.
+```ts
+function MsalInterceptorConfigFactory(): MsalInterceptorConfiguration {
+    const myProtectedResourceMap = new Map<string, Array<string | ProtectedResourceScopes> | null>();
+    myProtectedResourceMap.set(AppConstants.graphEndpoint, [{
+        httpMethod: 'GET',
+        scopes: ['User.Read']
+    }]);
+    return {
+        interactionType: InteractionType.Popup,
+        protectedResourceMap: myProtectedResourceMap
+    }
+}
+```
+Note that I have defined the graph endpoint URL in the [AppConstants](./src/app/constants.ts) class.
+
+Next, we will need to call this endpoint in the profile service using HTTP Client, so start by injecting this dependency in the profile service file.
+```ts
+constructor(
+    private httpClient: HttpClient
+) { }
+```
+
+Now replace the `getProfile` method with the following, and we should be good.
+```ts
+getProfile(): Observable<Profile> {
+    return this.httpClient.get<Profile>(AppConstants.graphEndpoint);
+}
+```
+
+Now on logging in and accessing the Profile route, it should obtain info from the Azure directory.
+
+---
